@@ -1,7 +1,7 @@
 import type { ResolvedSlidevOptions } from '@slidev/types'
 import { Buffer } from 'node:buffer'
-import { mkdir, readdir, stat, writeFile } from 'node:fs/promises'
-import { basename, extname, join, resolve } from 'node:path'
+import { mkdir, readdir, realpath, stat, writeFile } from 'node:fs/promises'
+import { basename, extname, join } from 'node:path'
 
 /**
  * The asset drawer is backed by the deck's own `public/` directory, so an
@@ -12,6 +12,8 @@ import { basename, extname, join, resolve } from 'node:path'
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.avif'])
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.mov'])
 const MAX_UPLOAD_BYTES = 32 * 1024 * 1024
+/** Enough for any real deck, and a bound when a symlink points at a large media library. */
+const MAX_LISTED_ASSETS = 5000
 
 export interface AssetEntry {
   /** URL to use inside a slide. */
@@ -29,28 +31,65 @@ export function assetRoot(options: ResolvedSlidevOptions) {
 export async function listAssets(options: ResolvedSlidevOptions): Promise<AssetEntry[]> {
   const root = assetRoot(options)
   const assets: AssetEntry[] = []
+  await walk(root, '', assets, new Set())
+  return assets.sort((a, b) => a.name.localeCompare(b.name))
+}
 
-  let entries: Awaited<ReturnType<typeof readdir>>
+/**
+ * Lists the media files under `dir`, following symbolic links.
+ *
+ * `readdir(..., { recursive: true })` does not enter a symlinked directory and
+ * reports the link itself as neither a file nor a directory, so a deck that
+ * shares assets through `public/shared -> ../../shared/assets` showed none of
+ * them. `stat` follows the link, and the real path of every visited directory
+ * is remembered so a link that points back up the tree cannot loop. The URL
+ * keeps the path as seen from `public/`, which is what the browser requests.
+ */
+async function walk(dir: string, rel: string, assets: AssetEntry[], seen: Set<string>): Promise<void> {
+  let real: string
   try {
-    entries = await readdir(root, { withFileTypes: true, recursive: true }) as any
+    real = await realpath(dir)
   }
   catch {
-    return assets
+    return
+  }
+  if (seen.has(real))
+    return
+  seen.add(real)
+
+  let names: string[]
+  try {
+    names = await readdir(dir)
+  }
+  catch {
+    return
   }
 
-  for (const entry of entries as any[]) {
-    if (!entry.isFile())
+  for (const name of names.sort()) {
+    if (assets.length >= MAX_LISTED_ASSETS)
+      return
+    const full = join(dir, name)
+    let info: Awaited<ReturnType<typeof stat>>
+    try {
+      info = await stat(full)
+    }
+    catch {
+      // A dangling link: skip it rather than failing the whole listing.
       continue
-    const ext = extname(entry.name).toLowerCase()
+    }
+    const path = rel ? `${rel}/${name}` : name
+    if (info.isDirectory()) {
+      await walk(full, path, assets, seen)
+      continue
+    }
+    if (!info.isFile())
+      continue
+    const ext = extname(name).toLowerCase()
     const kind = IMAGE_EXTENSIONS.has(ext) ? 'image' : VIDEO_EXTENSIONS.has(ext) ? 'video' : null
     if (!kind)
       continue
-    const full = resolve(entry.parentPath ?? root, entry.name)
-    const url = `/${full.slice(root.length + 1).split(/[\\/]/).join('/')}`
-    assets.push({ url, name: entry.name, size: (await stat(full)).size, kind })
+    assets.push({ url: `/${path}`, name, size: info.size, kind })
   }
-
-  return assets.sort((a, b) => a.name.localeCompare(b.name))
 }
 
 export interface UploadPayload {
