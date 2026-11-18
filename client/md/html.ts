@@ -111,3 +111,70 @@ export function replaceInnerHtml(
   const { from, to } = found[0]
   return block.slice(0, from) + next + block.slice(to)
 }
+
+/** Tags that sit inside a line of text rather than making a line of their own. */
+const INLINE_TAGS = new Set(['a', 'abbr', 'b', 'br', 'code', 'em', 'i', 'kbd', 'mark', 's', 'small', 'span', 'strong', 'sub', 'sup', 'u'])
+
+/** The part of a DOM element the leaf walk reads, so it can be tested without a browser. */
+export interface HtmlNode {
+  tagName: string
+  textContent: string | null
+  innerHTML: string
+  children: ArrayLike<HtmlNode>
+}
+
+export interface TextLeaf {
+  tag: string
+  /** The words of the line, whitespace collapsed. */
+  text: string
+  /** Its inner HTML as the browser renders it, read when the leaf is taken. */
+  html: string
+}
+
+/**
+ * The elements under `root` that hold one line of text each: an element whose
+ * children are all inline (or that has none), with some text in it. A card of
+ * `<div>` lines yields one leaf per line, so an edit to one line can be written
+ * back to that line alone.
+ */
+export function textLeaves(root: HtmlNode): TextLeaf[] {
+  const leaves: TextLeaf[] = []
+  const visit = (node: HtmlNode) => {
+    const children = Array.from(node.children)
+    if (children.every(child => INLINE_TAGS.has(child.tagName.toLowerCase()))) {
+      const text = collapse(node.textContent ?? '')
+      if (text)
+        leaves.push({ tag: node.tagName.toLowerCase(), text, html: collapse(stripStudioAttrs(node.innerHTML)) })
+      return
+    }
+    children.forEach(visit)
+  }
+  visit(root)
+  return leaves
+}
+
+/**
+ * Writes back only the lines of an element whose words changed.
+ *
+ * `before` is the leaf list taken when editing started, `after` the one taken
+ * when it ends. When both have the same shape, each changed leaf is replaced in
+ * place with `replaceInnerHtml`, and every other byte of the block stays as it
+ * was. Returns null when the shape changed (a line added, removed or retagged)
+ * or a changed line cannot be found exactly once, which leaves the caller to
+ * write the element back whole.
+ */
+export function patchChangedLeaves(block: string, before: TextLeaf[], after: TextLeaf[]): string | null {
+  if (before.length !== after.length || before.some((leaf, i) => leaf.tag !== after[i].tag))
+    return null
+  let patched = block
+  for (let i = 0; i < before.length; i++) {
+    if (before[i].text === after[i].text)
+      continue
+    const result = replaceInnerHtml(patched, before[i].tag, before[i].text, after[i].html)
+    if (result === null)
+      return null
+    patched = result
+  }
+  return patched
+}
+

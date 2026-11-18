@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { replaceInnerHtml, stripStudioAttrs } from '../client/md/html'
+import { patchChangedLeaves, replaceInnerHtml, stripStudioAttrs, textLeaves } from '../client/md/html'
 
 describe('replacing the words inside raw HTML', () => {
   it('keeps the tag and every attribute', () => {
@@ -86,3 +86,54 @@ describe('replacing the words inside raw HTML', () => {
       .toBe('<p class="x">Hei</p>')
   })
 })
+
+describe('writing back only the lines that changed', () => {
+  // A DOM-shaped node: enough for the walk, without a browser.
+  const node = (tagName: string, children: any[] = [], text = ''): any => ({
+    tagName: tagName.toUpperCase(),
+    children,
+    get textContent() {
+      return children.length ? children.map((c: any) => c.textContent).join(' ') : text
+    },
+    get innerHTML() {
+      return children.length ? children.map((c: any) => `<${c.tagName.toLowerCase()}>${c.innerHTML}</${c.tagName.toLowerCase()}>`).join('') : text
+    },
+  })
+
+  const block = [
+    '  <div class="flex flex-col items-center">',
+    '    <div class="h-[190px]"><img src="/drone.png" alt="Drone" /></div>',
+    '    <div class="text-lg font-bold mt-1">Nano-drone</div>',
+    '    <div class="text-sm opacity-70">Small, safe, IMU only</div>',
+    '  </div>',
+  ].join('\n')
+
+  const card = (subtitle: string) => node('div', [
+    node('div', [node('img')]),
+    node('div', [], 'Nano-drone'),
+    node('div', [], subtitle),
+  ])
+
+  it('finds one leaf per line of text and skips the image box', () => {
+    expect(textLeaves(card('Small, safe, IMU only')).map(l => l.text)).toEqual(['Nano-drone', 'Small, safe, IMU only'])
+  })
+
+  it('patches only the changed line and keeps the card byte for byte', () => {
+    const before = textLeaves(card('Small, safe, IMU only'))
+    const after = textLeaves(card('Small, safe, only an IMU'))
+    expect(patchChangedLeaves(block, before, after)).toBe(block.replace('Small, safe, IMU only', 'Small, safe, only an IMU'))
+  })
+
+  it('keeps inline markup typed into a line', () => {
+    const before = textLeaves(card('Small, safe, IMU only'))
+    const after = textLeaves(node('div', [node('div', [node('img')]), node('div', [], 'Nano-drone'), node('div', [node('b', [], 'Small')])]))
+    expect(patchChangedLeaves(block, before, after)).toContain('<div class="text-sm opacity-70"><b>Small</b></div>')
+  })
+
+  it('gives up when a line was added, so the caller writes the element whole', () => {
+    const before = textLeaves(card('Small, safe, IMU only'))
+    const after = textLeaves(node('div', [node('div', [node('img')]), node('div', [], 'Nano-drone'), node('div', [], 'Small'), node('div', [], 'New line')]))
+    expect(patchChangedLeaves(block, before, after)).toBeNull()
+  })
+})
+
