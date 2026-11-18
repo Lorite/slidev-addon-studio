@@ -7,7 +7,7 @@
 > - The Assets panel lists files inside symlinked folders of `public/` (for example `public/shared -> ../../shared/assets`). Branch `fix/assets-follow-symlinks`, upstream issue [#5](https://github.com/BobTheShoplifter/slidev-addon-studio/issues/5).
 > - With an image selected, a click on an asset replaces its path in place and keeps the wrapper, classes and alt text. Alt-click inserts, Shift-click places freely. Branch `feat/assets-replace-selected-image`, upstream issue [#6](https://github.com/BobTheShoplifter/slidev-addon-studio/issues/6).
 >
-> Install the fork in a deck with `npm i -D github:Lorite/slidev-addon-studio` (or `pnpm add -D github:Lorite/slidev-addon-studio`), then add `addons: [slidev-addon-studio]` to the deck's headmatter as below. Everything else in this README is upstream's.
+> Install the fork in a deck with `npm i -D github:Lorite/slidev-addon-studio --allow-git=root` (npm 12 refuses git dependencies unless you opt in, and `root` allows only those named in your own `package.json`), then add `addons: [slidev-addon-studio]` to the deck's headmatter as below. Everything else in this README is upstream's.
 
 ![slidev-addon-studio: a visual editor for Slidev. A slide canvas with a Shape component selected, showing the selection outline and resize handles](./docs/banner.png)
 
