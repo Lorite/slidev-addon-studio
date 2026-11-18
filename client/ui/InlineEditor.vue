@@ -4,7 +4,8 @@ import type { SourceRange } from '../types'
 import { computed, nextTick, ref, watch } from 'vue'
 import { blockShape, canEditContainer, canEditVisually, serialiseBlock, serialiseContainer } from '../md/inline'
 import { toggleBullet, toggleHeading, toggleQuote, toggleTagWrap, toggleWrap, toLink } from '../md/format'
-import { replaceInnerHtml, stripStudioAttrs } from '../md/html'
+import type { TextLeaf } from '../md/html'
+import { patchChangedLeaves, replaceInnerHtml, stripStudioAttrs, textLeaves } from '../md/html'
 import { getBlock, replaceBlock } from '../md/lines'
 import { editing, reportError, selection } from '../state'
 import { useStudio } from '../context'
@@ -64,6 +65,8 @@ let heldKind: 'block' | 'container' | 'prop' | 'html' = 'block'
 /** For an edit inside raw HTML: the element's tag, and the words it held. */
 let htmlTag = ''
 let htmlWas = ''
+/** The lines of the held element when editing started, so only the changed ones are written back. */
+let htmlLeaves: TextLeaf[] = []
 
 
 
@@ -181,6 +184,7 @@ watch(editing, async (open) => {
       heldKind = 'html'
       htmlTag = tag
       htmlWas = was
+      htmlLeaves = textLeaves(element as any)
     }
   }
 
@@ -363,10 +367,15 @@ async function apply() {
     // an HTML block is passed through untouched, so `**bold**` would stay four
     // asterisks on the slide.
     const next = stripStudioAttrs(element.innerHTML).replace(/\s+/g, ' ').trim()
+    // Read before releasing, which puts the original markup back.
+    const leaves = textLeaves(element as any)
     release()
     editing.value = false
     const block = getBlock(studio.content(), target)
-    const patched = replaceInnerHtml(block, htmlTag, htmlWas, next)
+    // Line by line when the element still has the lines it started with, so a
+    // card of <div> lines keeps its layout. The whole element otherwise.
+    const patched = patchChangedLeaves(block, htmlLeaves, leaves)
+      ?? replaceInnerHtml(block, htmlTag, htmlWas, next)
     if (patched === null) {
       reportError(new Error('That element could not be found in the Markdown any more, so nothing was changed.'))
       return
