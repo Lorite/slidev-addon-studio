@@ -233,6 +233,28 @@ describe('containers holding things that are not text', () => {
   const txt = (textContent: string): any => ({ nodeType: 3, textContent })
   const verbatim = (child: any) => child.src ?? null
 
+  it('refuses a container whose source holds the same words in another layout', () => {
+    // A hand-made card: indented raw HTML lines with no blank line between them.
+    // Writing it back one block per child would dedent the lines and spread them
+    // over blank lines after an edit to one word.
+    const card = el('div', [
+      el('div', [txt('Nano-drone')], '    <div class="text-lg font-bold mt-1">Nano-drone</div>'),
+      el('div', [txt('Small, safe, IMU only')], '    <div class="text-sm opacity-70">Small, safe, IMU only</div>'),
+    ])
+    const source = '    <div class="text-lg font-bold mt-1">Nano-drone</div>\n    <div class="text-sm opacity-70">Small, safe, IMU only</div>'
+    expect(serialiseContainer(card, verbatim)).not.toBe(source)
+    expect(canEditContainer(source, card, verbatim)).toBe(false)
+  })
+
+  it('still accepts a container whose layout comes back as written', () => {
+    const box = el('div', [
+      el('p', [txt('Før.')]),
+      el('span', [txt('gjengitt')], '<TnPill>Merkelapp</TnPill>'),
+      el('p', [txt('Etter.')]),
+    ])
+    expect(canEditContainer('Før.\n\n<TnPill>Merkelapp</TnPill>\n\nEtter.  ', box, verbatim)).toBe(true)
+  })
+
   it('hands a component back its own source', () => {
     const box = el('div', [
       el('p', [txt('Før.')]),

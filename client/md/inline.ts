@@ -376,19 +376,38 @@ export function serialiseContainer(
   return blocks.length ? blocks.join('\n\n') : null
 }
 
-/** Whether a whole container can be handed over and written back unchanged. */
+/**
+ * Whether a whole container can be handed over and written back unchanged.
+ *
+ * Unchanged means the layout as well as the words. The container is written
+ * back one child per block with a blank line between them and each child
+ * trimmed, so a source that holds the same words in another layout, such as a
+ * card of indented `<div>` lines with no blank line between them, would come
+ * back dedented and spread over blank lines after an edit to one word. Such a
+ * container is left to the single-block and in-place HTML paths instead.
+ */
 export function canEditContainer(
   source: string,
   root: InlineElement,
   verbatim?: (child: InlineElement) => string | null,
 ): boolean {
   const written = serialiseContainer(root, verbatim)
-  return written !== null && plain(written) === plain(source)
+  return written !== null && plain(written) === plain(source) && layout(written) === layout(source)
 }
 
 export function canEditVisually(source: string, root: InlineElement, shape: BlockShape): boolean {
   const written = serialiseBlock(root, shape)
   return written !== null && plain(written) === plain(source)
+}
+
+/** The lines of a block as written, ignoring only trailing spaces and the blank lines around it. */
+function layout(markdown: string): string {
+  return markdown
+    .replace(/\\([\\`*_[\]])/g, '$1')
+    .split('\n')
+    .map(line => line.replace(/\s+$/, ''))
+    .join('\n')
+    .trim()
 }
 
 /** Markdown reduced to what it says, so escaping and spacing do not count. */
