@@ -4,6 +4,8 @@ import { onMounted, ref } from 'vue'
 import { assetApi, readAsBase64 } from '../../composables/useDeckApi'
 import { useStudio } from '../../context'
 import { assetSnippet, insertSnippet, positioned } from '../../md/insert'
+import { getBlock, replaceBlock } from '../../md/lines'
+import { replaceMediaSource, selectedMediaUrl } from '../../md/media'
 import { selection } from '../../state'
 
 /**
@@ -38,6 +40,33 @@ async function upload(files: FileList | null) {
   finally {
     uploading.value = false
   }
+}
+
+/**
+ * With an image selected, a click swaps the file it shows and leaves the rest
+ * of its markup as written: wrapper, size classes, alt text. Alt-click still
+ * inserts after the selection, and with no image selected a click inserts.
+ */
+async function pick(asset: StudioAsset, event: MouseEvent) {
+  if (event.shiftKey)
+    return place(asset)
+  if (!event.altKey && await replace(asset))
+    return
+  return insert(asset)
+}
+
+async function replace(asset: StudioAsset): Promise<boolean> {
+  const target = selection.value
+  const current = selectedMediaUrl(target?.el)
+  if (!target?.range || !current)
+    return false
+  const content = studio.content()
+  const block = getBlock(content, target.range)
+  const next = replaceMediaSource(block, asset.url, current)
+  if (next === null || next === block)
+    return false
+  await studio.commit(replaceBlock(content, target.range, next), `Replace image with ${asset.name}`)
+  return true
 }
 
 async function insert(asset: StudioAsset) {
@@ -79,8 +108,8 @@ async function place(asset: StudioAsset) {
       v-for="asset in assets"
       :key="asset.url"
       class="studio-asset"
-      :title="`${asset.url}. Click to insert, shift-click to place freely`"
-      @click="$event.shiftKey ? place(asset) : insert(asset)"
+      :title="`${asset.url}. Click to replace the selected image or insert, alt-click to insert, shift-click to place freely`"
+      @click="pick(asset, $event)"
     >
       <img v-if="asset.kind === 'image'" :src="asset.url" :alt="asset.name" loading="lazy">
       <span class="studio-asset__name">{{ asset.name }}</span>
