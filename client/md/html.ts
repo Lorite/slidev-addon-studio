@@ -10,8 +10,8 @@
  *
  * The element is found by the text it currently holds rather than by counting
  * tags, because that is the one thing the rendered page and the source agree on
- * without a parser. If the same words appear twice in the block there is no way
- * to tell which was meant, so nothing is written.
+ * without a parser. If the same words appear in two separate elements of the
+ * block there is no way to tell which was meant, so nothing is written.
  */
 
 /** Whitespace differs between source and DOM; meaning does not. */
@@ -43,33 +43,39 @@ interface Span {
 }
 
 /**
- * Every `<tag …>…</tag>` in a block, at the top level of that tag.
+ * Every `<tag …>…</tag>` in a block, nested ones included.
  *
- * A tag nested inside another of the same name makes "the closing tag"
- * ambiguous to a scan this simple, so such a block is refused rather than
- * guessed at.
+ * Opening and closing tags are paired with a stack, the way the browser pairs
+ * them, so a `<div>` inside a `<div>` is read rather than refused: a hand-made
+ * card is a `<div>` of `<div>` lines inside a grid `<div>`, and refusing every
+ * such block sent its edits to a path that rewrites the whole container.
+ * Self-closing tags (`<tag />`) hold no text and are skipped. A block whose
+ * tags do not pair up is refused.
  */
 function spansOf(block: string, tag: string): Span[] | null {
-  const open = new RegExp(`<${tag}\\b[^>]*?>`, 'gi')
-  const close = new RegExp(`</${tag}\\s*>`, 'gi')
-  const opens = [...block.matchAll(open)]
-  const closes = [...block.matchAll(close)]
-  if (!opens.length || opens.length !== closes.length)
-    return null
-
+  const tokens = new RegExp(`<(/?)${tag}\\b[^>]*?(/?)>`, 'gi')
+  const stack: number[] = []
   const spans: Span[] = []
-  for (let i = 0; i < opens.length; i++) {
-    const from = opens[i].index! + opens[i][0].length
-    const to = closes[i].index!
-    // Interleaved rather than nested is what this can read; anything else is
-    // a shape it would have to parse properly to be sure about.
-    if (to < from)
-      return null
-    if (i + 1 < opens.length && opens[i + 1].index! < to)
-      return null
-    spans.push({ from, to })
+  for (const m of block.matchAll(tokens)) {
+    const [whole, closing, selfClosing] = m
+    if (closing) {
+      const from = stack.pop()
+      if (from === undefined)
+        return null
+      spans.push({ from, to: m.index! })
+    }
+    else if (!selfClosing) {
+      stack.push(m.index! + whole.length)
+    }
   }
+  if (stack.length || !spans.length)
+    return null
   return spans
+}
+
+/** Whether `outer` holds `inner` inside it. */
+function contains(outer: Span, inner: Span): boolean {
+  return outer !== inner && outer.from <= inner.from && inner.to <= outer.to
 }
 
 /**
@@ -93,7 +99,12 @@ export function replaceInnerHtml(
     return null
 
   const wanted = collapse(current)
-  const found = spans.filter(span => textOf(block.slice(span.from, span.to)) === wanted)
+  const matching = spans.filter(span => textOf(block.slice(span.from, span.to)) === wanted)
+  // A wrapper whose only words are those of the element inside it matches too.
+  // The innermost one is the element the page reported, and replacing its
+  // content keeps every wrapper and its attributes. Two separate elements with
+  // the same words are still refused: either could be meant.
+  const found = matching.filter(span => !matching.some(other => contains(span, other)))
   if (found.length !== 1)
     return null
 
