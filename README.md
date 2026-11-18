@@ -1,5 +1,14 @@
 # slidev-addon-studio
 
+> [!NOTE]
+> **This is a fork** of [BobTheShoplifter/slidev-addon-studio](https://github.com/BobTheShoplifter/slidev-addon-studio) 0.3.1 with three fixes for hand-written decks, each on its own branch with tests, until upstream has them:
+>
+> - Editing one word inside a nested raw HTML card no longer rewrites the card (indentation and line breaks are kept). Branch `fix/keep-raw-html-layout`, upstream issue [#4](https://github.com/BobTheShoplifter/slidev-addon-studio/issues/4).
+> - The Assets panel lists files inside symlinked folders of `public/` (for example `public/shared -> ../../shared/assets`). Branch `fix/assets-follow-symlinks`, upstream issue [#5](https://github.com/BobTheShoplifter/slidev-addon-studio/issues/5).
+> - With an image selected, a click on an asset replaces its path in place and keeps the wrapper, classes and alt text. Alt-click inserts, Shift-click places freely. Branch `feat/assets-replace-selected-image`, upstream issue [#6](https://github.com/BobTheShoplifter/slidev-addon-studio/issues/6).
+>
+> Install the fork in a deck with `npm i -D github:Lorite/slidev-addon-studio` (or `pnpm add -D github:Lorite/slidev-addon-studio`), then add `addons: [slidev-addon-studio]` to the deck's headmatter as below. Everything else in this README is upstream's.
+
 ![slidev-addon-studio: a visual editor for Slidev. A slide canvas with a Shape component selected, showing the selection outline and resize handles](./docs/banner.png)
 
 A visual editor for [Slidev](https://sli.dev). Select, drag, resize, animate and
